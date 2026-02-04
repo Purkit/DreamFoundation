@@ -1,7 +1,6 @@
 #ifndef DREAM_WINDOW_PUBLIC_API
 #define DREAM_WINDOW_PUBLIC_API
 
-#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -12,26 +11,6 @@ extern "C" {
 #include "_callbackSig.h"
 
 typedef struct DreamWindow DreamWindow;
-
-typedef void *(*DreamUserAllocFn)(
-    size_t size, size_t alignment, void *user_data
-);
-typedef void (*DreamUserFreeFn)(void *ptr, void *user_data);
-
-typedef struct DreamUserAllocator {
-    DreamUserAllocFn alloc;
-    DreamUserFreeFn free;
-    void *user_data;
-} DreamUserAllocator;
-
-typedef struct DreamConfig {
-    bool use_custom_allocator;
-    const DreamUserAllocator *allocator;
-    void *user_data;
-} DreamConfig;
-
-bool DreamInit(const DreamConfig *config);
-void DreamShutdown();
 
 typedef struct DreamWindowCallbacks {
     DWindowResizeFn onResize;
@@ -107,4 +86,4 @@ float DreamGetMouseY(DreamWindow *window);
 }
 #endif
 
-#endif // DREAM_WINDOW_PUBLIC_API
+#endif // !DREAM_WINDOW_PUBLIC_API
