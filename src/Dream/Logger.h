@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+
 typedef enum DreamLogLevel {
     DREAM_LOG_TRACE,
     DREAM_LOG_INFO,
@@ -17,7 +18,16 @@ typedef enum DreamLogSink {
     DREAM_LOG_SINK_STDERR      = 1 << 1,
     DREAM_LOG_SINK_FILE        = 1 << 2,
     DREAM_LOG_SINK_RING_BUFFER = 1 << 3,
+    DREAM_LOG_SINK_CALLBACK    = 1 << 4,
 } DreamLogSink;
+
+typedef void (*DreamLogCallbackFn)(
+    DreamLogLevel level,
+    const char *category,
+    const char *message,
+    const char *formatted_line,
+    void *user_data
+);
 
 typedef uint8_t DreamLogSinksBitmask;
 
@@ -33,6 +43,9 @@ typedef struct DreamLoggerConfig {
 
     uint32_t ring_buffer_lines;
     uint32_t ring_buffer_line_len;
+
+    DreamLogCallbackFn callback;
+    void *callback_user_data;
 } DreamLoggerConfig;
 
 #if !defined(REMOVE_DREAM_LOGGER)

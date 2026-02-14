@@ -39,6 +39,8 @@ typedef struct DreamLoggerState {
     DreamLogSinksBitmask log_sinks;
     FILE *logfile;
     DreamRingBuffer ring;
+    DreamLogCallbackFn callback;
+    void *callback_user_data;
 #ifdef DREAM_PLATFORM_WIN32
     HANDLE console;
     WORD default_attributes;
@@ -190,6 +192,14 @@ void DreamLoggerInit(const DreamLoggerConfig *config) {
             g_logger.log_sinks &= ~DREAM_LOG_SINK_RING_BUFFER;
         }
     }
+
+    if ((g_logger.log_sinks & DREAM_LOG_SINK_CALLBACK) && config->callback) {
+
+        g_logger.callback           = config->callback;
+        g_logger.callback_user_data = config->callback_user_data;
+    } else {
+        g_logger.log_sinks &= ~DREAM_LOG_SINK_CALLBACK;
+    }
 }
 
 void DreamLoggerShutdown(void) {
@@ -230,8 +240,12 @@ static void dream_ring_buffer_push(const char *line) {
     if (r->count < r->capacity) r->count++;
 }
 
-static void
-dream_dispatch_log(DreamLogLevel level, const char *formatted_line) {
+static void dream_dispatch_log(
+    DreamLogLevel level,
+    const char *category,
+    const char *message,
+    const char *formatted_line
+) {
     if (g_logger.log_sinks & DREAM_LOG_SINK_STDOUT) {
         dream_set_color(level);
         dream_write_stdout(formatted_line);
@@ -250,6 +264,16 @@ dream_dispatch_log(DreamLogLevel level, const char *formatted_line) {
 
     if (g_logger.log_sinks & DREAM_LOG_SINK_RING_BUFFER) {
         dream_ring_buffer_push(formatted_line);
+    }
+
+    if (g_logger.log_sinks & DREAM_LOG_SINK_CALLBACK) {
+        g_logger.callback(
+            level,
+            category,
+            message,
+            formatted_line,
+            g_logger.callback_user_data
+        );
     }
 }
 
@@ -313,7 +337,7 @@ void DreamLog(DreamLogLevel level, const char *category, const char *fmt, ...) {
 
     snprintf(line + offset, sizeof(line) - offset, "%s\n", msg);
 
-    dream_dispatch_log(level, line);
+    dream_dispatch_log(level, category, msg, line);
 
     if (level == DREAM_LOG_FATAL) {
         if (g_logger.log_sinks & DREAM_LOG_SINK_RING_BUFFER) {
