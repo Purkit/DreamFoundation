@@ -35,12 +35,17 @@ typedef struct DreamLoggerState {
     bool use_emoji;
     bool show_time;
     bool show_thread;
-    DreamLogLevel min_level;
     DreamLogSinksBitmask log_sinks;
     FILE *logfile;
     DreamRingBuffer ring;
     DreamLogCallbackFn callback;
     void *callback_user_data;
+    DreamLogLevel global_min_log_level;
+    DreamLogLevel stdout_min_level;
+    DreamLogLevel stderr_min_level;
+    DreamLogLevel file_min_level;
+    DreamLogLevel ringbuf_min_level;
+    DreamLogLevel usercallback_min_level;
 #ifdef DREAM_PLATFORM_WIN32
     HANDLE console;
     WORD default_attributes;
@@ -151,14 +156,29 @@ static void dream_time_string(char *out, size_t size) {
 void DreamLoggerInit(const DreamLoggerConfig *config) {
     memset(&g_logger, 0, sizeof(g_logger));
 
-    g_logger.enabled     = config->enabled;
-    g_logger.use_color   = config->use_color;
-    g_logger.use_emoji   = config->use_emoji;
-    g_logger.show_time   = config->show_time;
-    g_logger.show_thread = config->show_thread;
-    g_logger.min_level   = config->min_level;
-    g_logger.log_sinks   = config->log_sinks;
-    g_logger.initialized = true;
+    g_logger.enabled              = config->enabled;
+    g_logger.use_color            = config->use_color;
+    g_logger.use_emoji            = config->use_emoji;
+    g_logger.show_time            = config->show_time;
+    g_logger.show_thread          = config->show_thread;
+    g_logger.global_min_log_level = config->global_min_log_level;
+    g_logger.log_sinks            = config->log_sinks;
+    g_logger.initialized          = true;
+
+    if (config->enablePerSinkLogLevel) {
+        g_logger.stdout_min_level  = config->perSinkLogLevel.stdout_min_level;
+        g_logger.stderr_min_level  = config->perSinkLogLevel.stderr_min_level;
+        g_logger.file_min_level    = config->perSinkLogLevel.file_min_level;
+        g_logger.ringbuf_min_level = config->perSinkLogLevel.ringbuf_min_level;
+        g_logger.usercallback_min_level =
+            config->perSinkLogLevel.usercallback_min_level;
+    } else {
+        g_logger.stdout_min_level       = config->global_min_log_level;
+        g_logger.stderr_min_level       = config->global_min_log_level;
+        g_logger.file_min_level         = config->global_min_log_level;
+        g_logger.ringbuf_min_level      = config->global_min_log_level;
+        g_logger.usercallback_min_level = config->global_min_log_level;
+    }
 
 #ifdef DREAM_PLATFORM_WIN32
     g_logger.console = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -246,27 +266,32 @@ static void dream_dispatch_log(
     const char *message,
     const char *formatted_line
 ) {
-    if (g_logger.log_sinks & DREAM_LOG_SINK_STDOUT) {
+    if ((g_logger.log_sinks & DREAM_LOG_SINK_STDOUT) &&
+        level >= g_logger.stdout_min_level) {
         dream_set_color(level);
         dream_write_stdout(formatted_line);
         dream_reset_color();
     }
 
-    if (g_logger.log_sinks & DREAM_LOG_SINK_STDERR) {
+    if ((g_logger.log_sinks & DREAM_LOG_SINK_STDERR) &&
+        level >= g_logger.stderr_min_level) {
         dream_set_color(level);
         dream_write_stderr(formatted_line);
         dream_reset_color();
     }
 
-    if (g_logger.log_sinks & DREAM_LOG_SINK_FILE) {
+    if ((g_logger.log_sinks & DREAM_LOG_SINK_FILE) &&
+        level >= g_logger.file_min_level) {
         dream_write_file(formatted_line);
     }
 
-    if (g_logger.log_sinks & DREAM_LOG_SINK_RING_BUFFER) {
+    if ((g_logger.log_sinks & DREAM_LOG_SINK_RING_BUFFER) &&
+        level >= g_logger.ringbuf_min_level) {
         dream_ring_buffer_push(formatted_line);
     }
 
-    if (g_logger.log_sinks & DREAM_LOG_SINK_CALLBACK) {
+    if ((g_logger.log_sinks & DREAM_LOG_SINK_CALLBACK) &&
+        level >= g_logger.usercallback_min_level) {
         g_logger.callback(
             level,
             category,
@@ -298,7 +323,7 @@ void DreamLoggerDumpRingBuffer(FILE *out) {
 void DreamLog(DreamLogLevel level, const char *category, const char *fmt, ...) {
     if (!g_logger.initialized || !g_logger.enabled) return;
 
-    if (level < g_logger.min_level) return;
+    if (level < g_logger.global_min_log_level) return;
 
     char msg[1024];
     char line[1400];

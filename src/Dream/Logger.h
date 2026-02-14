@@ -37,7 +37,7 @@ typedef struct DreamLoggerConfig {
     bool use_emoji;
     bool show_time;
     bool show_thread;
-    DreamLogLevel min_level;
+    DreamLogLevel global_min_log_level;
     DreamLogSinksBitmask log_sinks;
     const char *logfile_path;
 
@@ -46,6 +46,15 @@ typedef struct DreamLoggerConfig {
 
     DreamLogCallbackFn callback;
     void *callback_user_data;
+
+    bool enablePerSinkLogLevel;
+    struct {
+        DreamLogLevel stdout_min_level;
+        DreamLogLevel stderr_min_level;
+        DreamLogLevel file_min_level;
+        DreamLogLevel ringbuf_min_level;
+        DreamLogLevel usercallback_min_level;
+    } perSinkLogLevel;
 } DreamLoggerConfig;
 
 #if !defined(REMOVE_DREAM_LOGGER)
