@@ -18,9 +18,10 @@ typedef enum DreamLogLevel {
 } DreamLogLevel;
 
 typedef enum DreamLogSink {
-    DREAM_LOG_SINK_STDOUT = 1 << 0,
-    DREAM_LOG_SINK_STDERR = 1 << 1,
-    DREAM_LOG_SINK_FILE   = 1 << 2,
+    DREAM_LOG_SINK_STDOUT      = 1 << 0,
+    DREAM_LOG_SINK_STDERR      = 1 << 1,
+    DREAM_LOG_SINK_FILE        = 1 << 2,
+    DREAM_LOG_SINK_RING_BUFFER = 1 << 3,
 } DreamLogSink;
 
 typedef uint8_t DreamLogSinksBitmask;
@@ -34,6 +35,9 @@ typedef struct DreamLoggerConfig {
     DreamLogLevel min_level;
     DreamLogSinksBitmask log_sinks;
     const char *logfile_path;
+
+    uint32_t ring_buffer_lines;
+    uint32_t ring_buffer_line_len;
 } DreamLoggerConfig;
 
 typedef void *(*DreamUserAllocFn)(

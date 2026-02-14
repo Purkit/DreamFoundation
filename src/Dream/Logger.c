@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #ifndef REMOVE_DREAM_LOGGER
 
 #include "Logger.h"
@@ -19,6 +20,14 @@
 #include <unistd.h>
 #endif
 
+typedef struct DreamRingBuffer {
+    char *buffer;      /* contiguous memory */
+    uint32_t capacity; /* number of lines */
+    uint32_t line_len; /* max chars per line */
+    uint32_t head;     /* next write index */
+    uint32_t count;    /* valid lines */
+} DreamRingBuffer;
+
 typedef struct DreamLoggerState {
     bool initialized;
     bool enabled;
@@ -29,6 +38,7 @@ typedef struct DreamLoggerState {
     DreamLogLevel min_level;
     DreamLogSinksBitmask log_sinks;
     FILE *logfile;
+    DreamRingBuffer ring;
 #ifdef DREAM_PLATFORM_WIN32
     HANDLE console;
     WORD default_attributes;
@@ -161,6 +171,25 @@ void DreamLoggerInit(const DreamLoggerConfig *config) {
             g_logger.log_sinks &= ~DREAM_LOG_SINK_FILE;
         }
     }
+
+    if ((g_logger.log_sinks & DREAM_LOG_SINK_RING_BUFFER) &&
+        config->ring_buffer_lines && config->ring_buffer_line_len) {
+
+        uint32_t total_size =
+            config->ring_buffer_lines * config->ring_buffer_line_len;
+
+        g_logger.ring.buffer = malloc(total_size);
+
+        if (g_logger.ring.buffer) {
+            memset(g_logger.ring.buffer, 0, total_size);
+            g_logger.ring.capacity = config->ring_buffer_lines;
+            g_logger.ring.line_len = config->ring_buffer_line_len;
+            g_logger.ring.head     = 0;
+            g_logger.ring.count    = 0;
+        } else {
+            g_logger.log_sinks &= ~DREAM_LOG_SINK_RING_BUFFER;
+        }
+    }
 }
 
 void DreamLoggerShutdown(void) {
@@ -188,6 +217,19 @@ static void dream_write_file(const char *text) {
     }
 }
 
+static void dream_ring_buffer_push(const char *line) {
+    DreamRingBuffer *r = &g_logger.ring;
+
+    if (!r->buffer) return;
+
+    char *dst = r->buffer + (r->head * r->line_len);
+    strncpy(dst, line, r->line_len - 1);
+    dst[r->line_len - 1] = '\0';
+
+    r->head = (r->head + 1) % r->capacity;
+    if (r->count < r->capacity) r->count++;
+}
+
 static void
 dream_dispatch_log(DreamLogLevel level, const char *formatted_line) {
     if (g_logger.log_sinks & DREAM_LOG_SINK_STDOUT) {
@@ -205,6 +247,28 @@ dream_dispatch_log(DreamLogLevel level, const char *formatted_line) {
     if (g_logger.log_sinks & DREAM_LOG_SINK_FILE) {
         dream_write_file(formatted_line);
     }
+
+    if (g_logger.log_sinks & DREAM_LOG_SINK_RING_BUFFER) {
+        dream_ring_buffer_push(formatted_line);
+    }
+}
+
+void DreamLoggerDumpRingBuffer(FILE *out) {
+    DreamRingBuffer *r = &g_logger.ring;
+
+    if (!r->buffer || r->count == 0) return;
+
+    fprintf(out, "---- Dream Ring Buffer Dump (%u entries) ----\n", r->count);
+
+    uint32_t start = (r->head + r->capacity - r->count) % r->capacity;
+
+    for (uint32_t i = 0; i < r->count; ++i) {
+        uint32_t idx     = (start + i) % r->capacity;
+        const char *line = r->buffer + (idx * r->line_len);
+        fputs(line, out);
+    }
+
+    fprintf(out, "--------------------------------------------\n");
 }
 
 void DreamLog(DreamLogLevel level, const char *category, const char *fmt, ...) {
@@ -252,6 +316,9 @@ void DreamLog(DreamLogLevel level, const char *category, const char *fmt, ...) {
     dream_dispatch_log(level, line);
 
     if (level == DREAM_LOG_FATAL) {
+        if (g_logger.log_sinks & DREAM_LOG_SINK_RING_BUFFER) {
+            DreamLoggerDumpRingBuffer(stderr);
+        }
 #if defined(_WIN32)
         DebugBreak();
 #else
