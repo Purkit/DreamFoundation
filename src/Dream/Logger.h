@@ -1,6 +1,7 @@
 #ifndef DREAM_INTERNAL_LOGGER
 #define DREAM_INTERNAL_LOGGER
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 
@@ -13,13 +14,36 @@ typedef enum DreamLogLevel {
     DREAM_LOG_FATAL,
 } DreamLogLevel;
 
-typedef enum DreamLogSink {
+typedef enum DreamLoggerSinkTo {
     DREAM_LOG_SINK_STDOUT      = 1 << 0,
     DREAM_LOG_SINK_STDERR      = 1 << 1,
     DREAM_LOG_SINK_FILE        = 1 << 2,
     DREAM_LOG_SINK_RING_BUFFER = 1 << 3,
     DREAM_LOG_SINK_CALLBACK    = 1 << 4,
-} DreamLogSink;
+} DreamLoggerSinkTo;
+
+// typedef enum DreamLogFormatTokens {
+//     TIME,
+//     THREAD_ID,
+//     CATAGORY,
+//     LOG_LEVEL,
+// } DreamLogFormatTokens;
+
+typedef struct DreamLoggerSink DreamLoggerSink;
+typedef struct DreamLogMsg DreamLogMsg;
+typedef void (*DreamSinkWriteFn)(DreamLoggerSink *sink, const DreamLogMsg *log);
+struct DreamLoggerSink {
+    DreamLoggerSinkTo sink_into;
+    DreamLogLevel min_level;
+    // DreamLogFormatTokens format[4];
+    DreamSinkWriteFn __write;
+};
+
+typedef enum DreamLogAsyncOverflowPolicy {
+    BLOCK,
+    DROP_OLDEST,
+    DROP_NEWEST,
+} DreamLogAsyncOverflowPolicy;
 
 typedef void (*DreamLogCallbackFn)(
     DreamLogLevel level,
@@ -38,7 +62,8 @@ typedef struct DreamLoggerConfig {
     bool show_time;
     bool show_thread;
     DreamLogLevel global_min_log_level;
-    DreamLogSinksBitmask log_sinks;
+    DreamLoggerSink **sinks;
+    uint16_t sink_count;
     const char *logfile_path;
 
     uint32_t ring_buffer_lines;
@@ -47,14 +72,9 @@ typedef struct DreamLoggerConfig {
     DreamLogCallbackFn callback;
     void *callback_user_data;
 
-    bool enablePerSinkLogLevel;
-    struct {
-        DreamLogLevel stdout_min_level;
-        DreamLogLevel stderr_min_level;
-        DreamLogLevel file_min_level;
-        DreamLogLevel ringbuf_min_level;
-        DreamLogLevel usercallback_min_level;
-    } perSinkLogLevel;
+    bool async;
+    size_t async_queue_capacity; // no of DreamLogMsg elements
+    DreamLogAsyncOverflowPolicy async_log_overflow_policy;
 } DreamLoggerConfig;
 
 #if !defined(REMOVE_DREAM_LOGGER)
